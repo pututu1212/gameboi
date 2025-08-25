@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rex's Perilous Pursuit</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #1a202c;
+            color: #e2e8f0;
+            overflow: hidden;
+            touch-action: none; /* Prevents scrolling on touch devices */
+        }
+        canvas {
+            background-color: #2d3748;
+            display: block;
+            border-bottom: 4px solid #4a5568;
+            cursor: pointer;
+        }
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100vh;
+        }
+        #gameCanvas {
+            max-width: 100%;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .info-panel {
+            min-width: 800px;
+            max-width: 90%;
+        }
+        @media (max-width: 800px) {
+            .info-panel {
+                min-width: 90%;
+            }
+        }
+        .bubble-button {
+            transition: all 0.3s ease;
+        }
+        .bubble-button:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 8px 25px rgba(251, 146, 60, 0.4);
+        }
+        .bubble-button:active {
+            transform: translateY(1px) scale(0.95);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 flex items-center justify-center h-screen">
+
+    <div class="game-container w-full h-full p-4">
+        <!-- Game Information Panel -->
+        <div id="infoPanel" class="info-panel p-4 mb-4 bg-gray-800 rounded-lg shadow-lg flex justify-between items-center text-white">
+            <div>Score: <span id="score">0</span></div>
+            <div class="text-lg">Semester: <span id="semester">1</span></div>
+            <div class="flex items-center">
+                <span class="mr-2">Hits:</span>
+                <div id="hitIcons" class="flex space-x-1">
+                    <!-- Hit icons will be generated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+        <!-- Game Over / Start Screen -->
+        <div id="gameMessage" class="absolute inset-0 bg-black bg-opacity-70 flex-col justify-center items-center text-center p-4" style="display: none;">
+            <h1 id="messageTitle" class="text-5xl md:text-6xl font-bold text-yellow-400 mb-4">Rex's Perilous Pursuit</h1>
+            <p id="messageText" class="text-xl md:text-2xl text-gray-300 mb-8">Satan is chasing you! Jump (Up Arrow/Space) or Duck (Down Arrow).</p>
+            <button id="startButton" class="bubble-button text-2xl bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 px-8 rounded-full shadow-lg">
+                Start Game
+            </button>
+        </div>
+        
+        <!-- Password Prompt -->
+        <div id="password-prompt" class="absolute inset-0 bg-black bg-opacity-80 flex flex-col justify-center items-center text-center p-4">
+            <h2 class="text-3xl text-white mb-4">Enter Password</h2>
+            <input type="password" id="password-input" class="text-black p-2 rounded-md mb-4">
+            <button id="password-submit" class="bubble-button bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-full">Submit</button>
+            <p id="password-error" class="text-red-500 mt-2 h-4"></p>
+        </div>
+    </div>
+
+    <!-- Audio Files -->
+    <audio id="background-music" loop>
+        <source src="background-music.m4a" type="audio/mp4">
+        Your browser does not support the audio element.
+    </audio>
+    <audio id="yay-sound" src="yay.m4a"></audio>
+    <audio id="axe-swing-sound" src="axe-swing.m4a"></audio>
+    <audio id="scream-sound" src="scream.m4a"></audio>
+    <audio id="hop-sound" src="hop-sound.m4a"></audio>
+    <audio id="fall-sound" src="fall-sound.m4a"></audio>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const scoreEl = document.getElementById('score');
+        const semesterEl = document.getElementById('semester');
+        const hitIconsEl = document.getElementById('hitIcons');
+        const gameMessageEl = document.getElementById('gameMessage');
+        const messageTitleEl = document.getElementById('messageTitle');
+        const messageTextEl = document.getElementById('messageText');
+        const startButton = document.getElementById('startButton');
+        const backgroundMusic = document.getElementById('background-music');
+        const yaySound = document.getElementById('yay-sound');
+        const axeSwingSound = document.getElementById('axe-swing-sound');
+        const screamSound = document.getElementById('scream-sound');
+        const hopSound = document.getElementById('hop-sound');
+        const fallSound = document.getElementById('fall-sound');
+        const passwordPrompt = document.getElementById('password-prompt');
+        const passwordInput = document.getElementById('password-input');
+        const passwordSubmit = document.getElementById('password-submit');
+        const passwordError = document.getElementById('password-error');
+
+        // Set sound effect volumes to max
+        yaySound.volume = 1.0;
+        axeSwingSound.volume = 1.0;
+        screamSound.volume = 1.0;
+        hopSound.volume = 1.0;
+        fallSound.volume = 1.0;
+
+        // --- Load Character Images ---
+        const rexImage = new Image();
+        rexImage.src = 'images/rex.png';
+        const satanImage = new Image();
+        satanImage.src = 'images/shambu.png';
+
+
+        // --- Game Configuration ---
+        const GRAVITY = 0.6;
+        const JUMP_FORCE = -16;
+        const GROUND_HEIGHT = 50;
+        const PLAYER_WIDTH = 60;
+        const PLAYER_HEIGHT_NORMAL = 96;
+        const PLAYER_HEIGHT_DUCK = 60;
+        const SATAN_WIDTH = 75;
+        const SATAN_HEIGHT = 120;
+        const OBSTACLE_MIN_HEIGHT = 40;
+        const OBSTACLE_MAX_HEIGHT = 85;
+        const PROJECTILE_WIDTH = 20;
+        const PROJECTILE_HEIGHT = 20;
+        const MAX_HITS = 5;
+        const SATAN_INITIAL_DISTANCE = 330;
+        const SEMESTER_SCORE_THRESHOLD = 1500; // Restored original difficulty
+        const ITEM_SPEED = 5.85;
+
+        // --- Difficulty Settings ---
+        const difficultySettings = [
+            { baseSpeed: 3.5, projSpeed: 5.0, spawnMin: 180, spawnMax: 280 },
+            { baseSpeed: 4.2, projSpeed: 5.8, spawnMin: 160, spawnMax: 260 },
+            { baseSpeed: 4.9, projSpeed: 6.6, spawnMin: 140, spawnMax: 240 },
+            { baseSpeed: 5.6, projSpeed: 7.4, spawnMin: 120, spawnMax: 220 },
+            { baseSpeed: 6.3, projSpeed: 8.2, spawnMin: 100, spawnMax: 200 },
+            { baseSpeed: 7.0, projSpeed: 9.0, spawnMin: 80, spawnMax: 180 },
+            { baseSpeed: 7.7, projSpeed: 9.8, spawnMin: 60, spawnMax: 160 },
+            { baseSpeed: 8.5, projSpeed: 10.6, spawnMin: 40,  spawnMax: 140 },
+        ];
+
+        // --- Game State ---
+        let player, satan, obstacles, projectiles, items, score, hitCount, gameOver, gameWon, gameSpeed, projectileSpeed, spawnRateMin, spawnRateMax, frameCount, nextSpawnFrame, animationFrameId, currentSemester;
+        let bloodParticles = [];
+        let showSpeechBubble = false;
+        let showVictoryMessage = false;
+        let victoryMessageOpacity = 0;
+        let speechBubbleText = "";
+        let camera = { zoom: 1, x: canvas.width / 2, y: canvas.height / 2 };
+        
+        // --- Helper function for delays ---
+        const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+        // --- Player Character ---
+        const playerSprite = {
+            x: 355, 
+            y: canvas.height - GROUND_HEIGHT - PLAYER_HEIGHT_NORMAL,
+            width: PLAYER_WIDTH,
+            height: PLAYER_HEIGHT_NORMAL,
+            velocityY: 0,
+            isJumping: false,
+            isDucking: false,
+            isFallen: false,
+            isAttacking: false,
+            attackAngle: 0,
+            draw() {
+                let currentHeight = this.isDucking ? PLAYER_HEIGHT_DUCK : PLAYER_HEIGHT_NORMAL;
+                let drawY = this.y + (PLAYER_HEIGHT_NORMAL - currentHeight);
+
+                if (this.isFallen) {
+                    ctx.save();
+                    ctx.translate(this.x + this.height / 2, canvas.height - GROUND_HEIGHT);
+                    ctx.rotate(Math.PI / 2);
+                    ctx.drawImage(rexImage, -this.width / 2, -this.height, this.width, this.height);
+                    ctx.restore();
+                } else {
+                    ctx.drawImage(rexImage, this.x, drawY, this.width, currentHeight);
+                }
+
+                if (this.isAttacking) {
+                    drawAxe(this.x, this.y + PLAYER_HEIGHT_NORMAL, this.attackAngle, 0.9, true);
+                }
+            },
+            update() {
+                if (this.isFallen) return;
+                
+                this.velocityY += GRAVITY;
+                this.y += this.velocityY;
+
+                if (this.y > canvas.height - GROUND_HEIGHT - PLAYER_HEIGHT_NORMAL) {
+                    this.y = canvas.height - GROUND_HEIGHT - PLAYER_HEIGHT_NORMAL;
+                    this.velocityY = 0;
+                    this.isJumping = false;
+                }
+            },
+            jump() {
+                if (!this.isJumping && !gameOver) {
+                    this.isDucking = false;
+                    this.velocityY = JUMP_FORCE;
+                    this.isJumping = true;
+                }
+            }
+        };
+
+        // --- Satan Character ---
+        const satanSprite = {
+            x: 0,
+            y: canvas.height - GROUND_HEIGHT - SATAN_HEIGHT,
+            width: SATAN_WIDTH,
+            height: SATAN_HEIGHT,
+            isAttacking: false,
+            isFallen: false,
+            attackAngle: 0,
+            draw() {
+                if (this.isFallen) {
+                    ctx.save();
+                    ctx.translate(this.x + this.height / 2, canvas.height - GROUND_HEIGHT);
+                    ctx.rotate(Math.PI / 2);
+                    ctx.drawImage(satanImage, -this.width / 2, -this.height, this.width, this.height);
+                    ctx.restore();
+                } else {
+                    ctx.drawImage(satanImage, this.x, this.y, this.width, this.height);
+                }
+
+                if (this.isAttacking) {
+                    drawAxe(this.x + this.width, this.y + this.height, this.attackAngle, 1.0, true);
+                }
+            },
+            update() {
+                if (gameOver || this.isFallen) return;
+                this.x = player.x - SATAN_INITIAL_DISTANCE;
+            }
+        };
+        
+        // --- Item Class ---
+        class Item {
+            constructor(type) {
+                this.type = type; this.x = canvas.width; this.width = 40; this.height = 40;
+                this.baseY = canvas.height - GROUND_HEIGHT - 120; this.y = this.baseY;
+                this.hoverPhase = Math.random() * Math.PI * 2;
+                if (type === 'om') this.emoji = '🕉️';
+                else if (type === 'cross') this.emoji = '✝️';
+                else if (type === 'star') this.emoji = '✡️';
+                else if (type === 'inverted_cross') this.emoji = '✝️';
+            }
+            draw() {
+                const glowAmount = 15 + Math.sin(frameCount * 0.1 + this.hoverPhase) * 10;
+                ctx.shadowBlur = glowAmount;
+                
+                if (this.type === 'cross') ctx.shadowColor = 'red';
+                else if (this.type === 'inverted_cross') ctx.shadowColor = 'black';
+                else ctx.shadowColor = 'gold';
+
+                ctx.save();
+                ctx.font = `${this.height}px sans-serif`;
+                
+                if (this.type === 'inverted_cross') {
+                    ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+                    ctx.rotate(Math.PI);
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    ctx.fillText(this.emoji, 0, 0);
+                } else {
+                    ctx.fillText(this.emoji, this.x, this.y + this.height * 0.8);
+                }
+                ctx.restore();
+                
+                ctx.shadowBlur = 0;
+            }
+            update() {
+                this.x -= ITEM_SPEED; this.y = this.baseY + Math.sin(frameCount * 0.05 + this.hoverPhase) * 10;
+            }
+        }
+
+        // --- Projectile Class ---
+        class Projectile {
+            constructor() {
+                this.x = satan.x + satan.width; this.y = canvas.height - GROUND_HEIGHT - PLAYER_HEIGHT_NORMAL + 10;
+                this.width = PROJECTILE_WIDTH; this.height = PROJECTILE_HEIGHT;
+            }
+            draw() {
+                ctx.font = `${this.height}px sans-serif`; ctx.fillText('💀', this.x, this.y + this.height * 0.8);
+            }
+            update() {
+                this.x += projectileSpeed;
+            }
+        }
+
+        // --- Blood Particle Class ---
+        class BloodParticle {
+            constructor(x, y) {
+                this.x = x; this.y = y; this.size = Math.random() * 5 + 2;
+                this.speedX = Math.random() * 6 - 3; this.speedY = Math.random() * -8;
+                this.gravity = 0.3; this.life = 100;
+            }
+            update() {
+                this.speedY += this.gravity; this.x += this.speedX; this.y += this.speedY; this.life--;
+            }
+            draw() {
+                ctx.globalAlpha = this.life / 100; ctx.fillStyle = '#8b0000';
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill(); ctx.globalAlpha = 1.0;
+            }
+        }
+
+        // --- Obstacle Class ---
+        class Obstacle {
+            constructor() {
+                this.height = Math.random() * (OBSTACLE_MAX_HEIGHT - OBSTACLE_MIN_HEIGHT) + OBSTACLE_MIN_HEIGHT;
+                this.width = this.height * 0.8;
+                this.x = canvas.width;
+                this.y = canvas.height - GROUND_HEIGHT - this.height;
+            }
+            draw() {
+                ctx.font = `${this.height}px sans-serif`;
+                ctx.fillText('📚', this.x, this.y + this.height);
+            }
+            update() {
+                this.x -= gameSpeed;
+            }
+        }
+
+        // --- Game Initialization ---
+        function init() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            player = Object.assign({}, playerSprite, { isFallen: false, isDucking: false, isAttacking: false, attackAngle: 0, height: PLAYER_HEIGHT_NORMAL });
+            satan = Object.assign({}, satanSprite, { isFallen: false, isAttacking: false, attackAngle: 0 });
+            obstacles = []; projectiles = []; items = []; bloodParticles = [];
+            score = 0; hitCount = 0; gameOver = false; gameWon = false; showSpeechBubble = false; showVictoryMessage = false; victoryMessageOpacity = 0;
+            currentSemester = 1;
+            applyDifficulty(currentSemester);
+            frameCount = 0;
+            nextSpawnFrame = spawnRateMin;
+            camera = { zoom: 1, x: canvas.width / 2, y: canvas.height / 2 };
+            updateHitIcons();
+            gameMessageEl.style.display = 'none';
+            backgroundMusic.volume = 0.75;
+            loop();
+        }
+
+        // --- Difficulty Management ---
+        function applyDifficulty(semester) {
+            const settings = difficultySettings[semester - 1];
+            gameSpeed = settings.baseSpeed;
+            projectileSpeed = settings.projSpeed;
+            spawnRateMin = settings.spawnMin;
+            spawnRateMax = settings.spawnMax;
+            semesterEl.textContent = semester;
+        }
+
+        // --- Main Game Loop ---
+        function loop() {
+            animationFrameId = requestAnimationFrame(loop);
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.scale(camera.zoom, camera.zoom);
+            ctx.translate(-camera.x, -camera.y);
+
+            drawGround();
+            player.update(); player.draw();
+            satan.update(); satan.draw();
+            handleSpawning();
+            handleObstacles();
+            handleProjectiles();
+            handleItems();
+            bloodParticles.forEach(p => p.draw());
+
+            ctx.restore();
+
+            score++; scoreEl.textContent = score;
+            
+            const nextSemester = Math.floor(score / SEMESTER_SCORE_THRESHOLD) + 1;
+            if (nextSemester > currentSemester && nextSemester <= difficultySettings.length) {
+                currentSemester = nextSemester;
+                applyDifficulty(currentSemester);
+            }
+
+            if (currentSemester >= 8 && score >= SEMESTER_SCORE_THRESHOLD * 8) {
+                gameOver = true;
+                gameWon = true;
+                cancelAnimationFrame(animationFrameId);
+                playVictoryCutscene();
+            }
+            
+            frameCount++;
+        }
+        
+        function drawScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.save();
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.scale(camera.zoom, camera.zoom);
+            ctx.translate(-camera.x, -camera.y);
+
+            drawGround();
+            obstacles.forEach(obs => obs.draw());
+            projectiles.forEach(proj => proj.draw());
+            items.forEach(item => item.draw());
+            player.draw(); satan.draw();
+            if (showSpeechBubble) {
+                drawSpeechBubble(speechBubbleText, satan.x, satan.y - 20);
+            }
+            if (showVictoryMessage) {
+                drawVictoryMessage();
+            }
+            bloodParticles.forEach(p => p.draw());
+
+            ctx.restore();
+        }
+
+        function drawSpeechBubble(text, x, y) {
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.font = "12px 'Press Start 2P'";
+            const textWidth = ctx.measureText(text).width;
+            const bubbleWidth = textWidth + 15;
+            const bubbleHeight = 25;
+            
+            const ownerWidth = satan.width;
+            ctx.beginPath();
+            ctx.roundRect(x - bubbleWidth / 2 + ownerWidth / 2, y - bubbleHeight, bubbleWidth, bubbleHeight, [8]);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = 'black';
+            ctx.textAlign = 'center';
+            ctx.fillText(text, x + ownerWidth / 2, y - 8);
+        }
+
+        function drawVictoryMessage() {
+            ctx.save();
+            ctx.globalAlpha = victoryMessageOpacity;
+            ctx.font = "40px 'Press Start 2P'";
+            ctx.fillStyle = '#facc15';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = 'black';
+            ctx.shadowBlur = 5;
+            ctx.fillText("Rex Won!🫨🫣", canvas.width / 2, 150);
+            ctx.restore();
+        }
+
+        function drawGround() {
+             ctx.fillStyle = '#4a5568';
+             ctx.fillRect(-canvas.width, canvas.height - GROUND_HEIGHT, canvas.width * 3, GROUND_HEIGHT);
+        }
+        
+        function drawAxe(pivotX, pivotY, angle, scale, flip) {
+            ctx.save();
+            ctx.translate(pivotX, pivotY);
+            ctx.rotate(angle);
+            if (flip) {
+                ctx.scale(-1, 1);
+            }
+            ctx.scale(scale, scale);
+
+            // Handle
+            ctx.fillStyle = '#8d5524'; // Brown
+            ctx.fillRect(-5, -55, 10, 55);
+            // Axe Head
+            ctx.fillStyle = '#a1a1aa'; // Gray
+            ctx.beginPath();
+            ctx.moveTo(5, -55);
+            ctx.lineTo(25, -65);
+            ctx.lineTo(25, -35);
+            ctx.lineTo(5, -45);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // --- Spawning Logic ---
+        function handleSpawning() {
+            if (frameCount > nextSpawnFrame) {
+                if (obstacles.length === 0 && projectiles.length === 0 && items.length === 0) {
+                    const spawnType = Math.random();
+                    if (spawnType < 0.12) {
+                        const itemTypeRoll = Math.random();
+                        if (itemTypeRoll < 0.5 && hitCount > 0) {
+                            items.push(new Item('cross'));
+                        } else {
+                            const badItemRoll = Math.random();
+                            if (badItemRoll < 0.4) items.push(new Item('om'));
+                            else if (badItemRoll < 0.8) items.push(new Item('star'));
+                            else items.push(new Item('inverted_cross'));
+                        }
+                    } else if (spawnType < 0.56) {
+                        projectiles.push(new Projectile());
+                    } else {
+                        obstacles.push(new Obstacle());
+                    }
+                    nextSpawnFrame = frameCount + Math.floor(Math.random() * (spawnRateMax - spawnRateMin)) + spawnRateMin;
+                }
+            }
+        }
+
+        // --- Hazard Management & Collision ---
+        function handleItems() {
+            for (let i = items.length - 1; i >= 0; i--) {
+                const item = items[i];
+                item.update();
+                item.draw();
+
+                const playerHitboxY = player.isDucking ? player.y + (PLAYER_HEIGHT_NORMAL - PLAYER_HEIGHT_DUCK) : player.y;
+                const playerHitboxHeight = player.isDucking ? PLAYER_HEIGHT_DUCK : PLAYER_HEIGHT_NORMAL;
+
+                if (player.x < item.x + item.width && player.x + player.width > item.x &&
+                    playerHitboxY < item.y + item.height && playerHitboxY + playerHitboxHeight > item.y) {
+                    
+                    if (item.type === 'cross') {
+                        if (hitCount > 0) hitCount--;
+                    } else if (item.type === 'inverted_cross') {
+                        hitCount = MAX_HITS;
+                    } else {
+                        if (hitCount < MAX_HITS) hitCount++;
+                    }
+                    
+                    updateHitIcons();
+                    items.splice(i, 1);
+
+                    if (hitCount >= MAX_HITS) {
+                        gameOver = true; cancelAnimationFrame(animationFrameId); playCutscene();
+                    }
+                } else if (item.x + item.width < 0) {
+                    items.splice(i, 1);
+                }
+            }
+        }
+
+        function handleProjectiles() {
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const proj = projectiles[i];
+                proj.update();
+                proj.draw();
+                const playerHitboxY = player.isDucking ? player.y + (PLAYER_HEIGHT_NORMAL - PLAYER_HEIGHT_DUCK) : player.y;
+                const playerHitboxHeight = player.isDucking ? PLAYER_HEIGHT_DUCK : PLAYER_HEIGHT_NORMAL;
+
+                if (player.x < proj.x + proj.width && player.x + player.width > proj.x &&
+                    playerHitboxY < proj.y + proj.height && playerHitboxY + playerHitboxHeight > proj.y) {
+                    hitCount++; updateHitIcons();
+                    projectiles.splice(i, 1);
+                    if (hitCount >= MAX_HITS) {
+                        gameOver = true; cancelAnimationFrame(animationFrameId); playCutscene();
+                    }
+                } else if (proj.x > canvas.width) {
+                    projectiles.splice(i, 1);
+                }
+            }
+        }
+
+        function handleObstacles() {
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obs = obstacles[i];
+                obs.update();
+                obs.draw();
+                const playerHitboxY = player.isDucking ? player.y + (PLAYER_HEIGHT_NORMAL - PLAYER_HEIGHT_DUCK) : player.y;
+                const playerHitboxHeight = player.isDucking ? PLAYER_HEIGHT_DUCK : PLAYER_HEIGHT_NORMAL;
+
+                if (player.x < obs.x + obs.width && player.x + player.width > obs.x &&
+                    playerHitboxY < obs.y + obs.height && playerHitboxY + playerHitboxHeight > obs.y) {
+                    hitCount++; updateHitIcons();
+                    obstacles.splice(i, 1);
+                    if (hitCount >= MAX_HITS) {
+                        gameOver = true; cancelAnimationFrame(animationFrameId); playCutscene();
+                    }
+                } else if (obs.x + obs.width < 0) {
+                    obstacles.splice(i, 1);
+                }
+            }
+        }
+        
+        // --- Cutscenes ---
+        async function playCutscene() {
+            backgroundMusic.pause();
+            obstacles = []; projectiles = []; items = [];
+            player.isFallen = true;
+            fallSound.play();
+            drawScene();
+            await sleep(3000);
+
+            const hops = 3; const hopHeight = 60; const hopFrameDuration = 25;
+            const totalDistanceToCover = (player.x - satan.width + 5) - satan.x;
+            const distancePerHop = totalDistanceToCover / hops;
+            for (let i = 0; i < hops; i++) {
+                hopSound.currentTime = 0;
+                hopSound.play();
+                const startX = satan.x; const startY = satan.y; const endX = startX + distancePerHop;
+                for (let t = 0; t <= hopFrameDuration; t++) {
+                    const progress = t / hopFrameDuration;
+                    satan.x = startX + (endX - startX) * progress;
+                    satan.y = startY - Math.sin(progress * Math.PI) * hopHeight;
+                    drawScene(); await sleep(10);
+                }
+                satan.x = endX; satan.y = startY; drawScene();
+            }
+            const finalStepDistance = 15; const stepFrames = 10;
+            for (let i = 0; i < stepFrames; i++) {
+                satan.x += finalStepDistance / stepFrames; drawScene(); await sleep(15);
+            }
+            
+            speechBubbleText = "Hallelujah!";
+            showSpeechBubble = true;
+            drawScene();
+            await sleep(1000);
+            showSpeechBubble = false;
+
+            const zoomFrames = 30;
+            const targetZoom = 1.5;
+            const targetCamX = satan.x + (player.x - satan.x) / 2;
+            const targetCamY = satan.y;
+            for (let i = 0; i <= zoomFrames; i++) {
+                const progress = i / zoomFrames;
+                camera.zoom = 1 + (targetZoom - 1) * progress;
+                camera.x = (canvas.width / 2) + (targetCamX - canvas.width / 2) * progress;
+                camera.y = (canvas.height / 2) + (targetCamY - canvas.height / 2) * progress;
+                drawScene();
+                await sleep(16);
+            }
+
+            satan.isAttacking = true;
+            for (let i = 0; i < 3; i++) {
+                axeSwingSound.currentTime = 0;
+                axeSwingSound.play();
+                if (i === 1) {
+                    setTimeout(() => screamSound.play(), 100);
+                }
+                splashBlood(player.x, player.width, player.height);
+                const swingFrames = 8;
+                const maxAngle = Math.PI / 2.5;
+                for (let t = 0; t < swingFrames; t++) {
+                    satan.attackAngle = (maxAngle * (t / swingFrames));
+                    drawScene();
+                    bloodParticles.forEach(p => p.update());
+                    await sleep(16);
+                }
+                for (let t = 0; t < swingFrames; t++) {
+                    satan.attackAngle = maxAngle - (maxAngle * (t / swingFrames));
+                    drawScene();
+                    bloodParticles.forEach(p => p.update());
+                    await sleep(16);
+                }
+                satan.attackAngle = 0; drawScene(); await sleep(200);
+            }
+            while(bloodParticles.length > 0) {
+                drawScene();
+                bloodParticles.forEach((p, index) => {
+                    p.update(); if(p.life <= 0) bloodParticles.splice(index, 1);
+                });
+                await sleep(16);
+            }
+            showGameOver(false);
+        }
+
+        async function playVictoryCutscene() {
+            backgroundMusic.pause();
+            obstacles = []; projectiles = []; items = [];
+            setTimeout(() => yaySound.play(), 100);
+            while(player.isJumping) {
+                player.update();
+                drawScene();
+                await sleep(16);
+            }
+
+            satan.isFallen = true;
+            showVictoryMessage = true;
+            
+            const fadeFrames = 60;
+            for(let i = 0; i <= fadeFrames; i++) {
+                victoryMessageOpacity = i / fadeFrames;
+                drawScene();
+                await sleep(16);
+            }
+            
+            await sleep(2000);
+            
+            const hops = 3; const hopHeight = 60; const hopFrameDuration = 25;
+            const totalDistanceToCover = (satan.x + satan.height + 40) - player.x;
+            const distancePerHop = totalDistanceToCover / hops;
+            for (let i = 0; i < hops; i++) {
+                hopSound.currentTime = 0;
+                hopSound.play();
+                const startX = player.x; const startY = player.y; const endX = startX + distancePerHop;
+                for (let t = 0; t <= hopFrameDuration; t++) {
+                    const progress = t / hopFrameDuration;
+                    player.x = startX + (endX - startX) * progress;
+                    player.y = startY - Math.sin(progress * Math.PI) * hopHeight;
+                    drawScene(); await sleep(10);
+                }
+                player.x = endX; player.y = startY; drawScene();
+            }
+            
+            const zoomFrames = 30;
+            const targetZoom = 1.5;
+            const targetCamX = player.x + (satan.x - player.x) / 2;
+            const targetCamY = player.y;
+            for (let i = 0; i <= zoomFrames; i++) {
+                const progress = i / zoomFrames;
+                camera.zoom = 1 + (targetZoom - 1) * progress;
+                camera.x = (canvas.width / 2) + (targetCamX - canvas.width / 2) * progress;
+                camera.y = (canvas.height / 2) + (targetCamY - canvas.height / 2) * progress;
+                drawScene();
+                await sleep(16);
+            }
+
+            player.isAttacking = true;
+            for (let i = 0; i < 5; i++) {
+                axeSwingSound.currentTime = 0;
+                axeSwingSound.play();
+                if (i === 1) {
+                    setTimeout(() => screamSound.play(), 100);
+                }
+                splashBlood(satan.x, satan.width, satan.height);
+                if (i >= 3) {
+                    splashScreenWithBlood();
+                }
+                const swingFrames = 8;
+                const maxAngle = Math.PI / 2.5;
+                for (let t = 0; t < swingFrames; t++) {
+                    player.attackAngle = (maxAngle * (t / swingFrames));
+                    drawScene();
+                    bloodParticles.forEach(p => p.update());
+                    await sleep(16);
+                }
+                for (let t = 0; t < swingFrames; t++) {
+                    player.attackAngle = maxAngle - (maxAngle * (t / swingFrames));
+                    drawScene();
+                    bloodParticles.forEach(p => p.update());
+                    await sleep(16);
+                }
+                player.attackAngle = 0; drawScene(); await sleep(200);
+            }
+
+            while(bloodParticles.length > 0) {
+                drawScene();
+                bloodParticles.forEach((p, index) => {
+                    p.update(); if(p.life <= 0) bloodParticles.splice(index, 1);
+                });
+                await sleep(16);
+            }
+            showGameOver(true);
+        }
+        
+        // --- Blood Splatter Effect ---
+        function splashBlood(targetX, targetWidth, targetHeight) {
+            const splashCenterX = targetX + targetHeight / 2;
+            const splashCenterY = canvas.height - GROUND_HEIGHT - targetWidth / 2;
+            for (let i = 0; i < 30; i++) {
+                bloodParticles.push(new BloodParticle(splashCenterX, splashCenterY));
+            }
+        }
+        
+        function splashScreenWithBlood() {
+            for (let i = 0; i < 50; i++) {
+                 bloodParticles.push(new BloodParticle(Math.random() * canvas.width, Math.random() * canvas.height));
+            }
+        }
+
+        // --- UI Updates ---
+        function updateHitIcons() {
+            hitIconsEl.innerHTML = '';
+            for (let i = 0; i < MAX_HITS; i++) {
+                const icon = document.createElement('span');
+                icon.textContent = '❤️';
+                if (i < hitCount) icon.classList.add('opacity-20');
+                hitIconsEl.appendChild(icon);
+            }
+        }
+        
+        function showGameOver(isWin) {
+            backgroundMusic.volume = 0.15;
+            backgroundMusic.play().catch(e => console.error("Audio play failed:", e));
+            if (isWin) {
+                messageTitleEl.textContent = 'Rex Graduated!';
+                messageTextEl.innerHTML = `You defeated Satan! <br> Your final score: <strong class="text-yellow-400">${score}</strong>`;
+            } else {
+                messageTitleEl.textContent = 'Rex Died!';
+                messageTextEl.innerHTML = `Satan caught you! <br> Your final score: <strong class="text-yellow-400">${score}</strong>`;
+            }
+            startButton.textContent = 'Restart Game';
+            gameMessageEl.style.display = 'flex';
+        }
+
+        // --- Event Listeners ---
+        function handleKeyDown(e) {
+            if (e.code === 'Space' || e.code === 'ArrowUp') {
+                e.preventDefault(); 
+                player.jump();
+            } else if (e.code === 'ArrowDown') {
+                e.preventDefault();
+                player.isDucking = true;
+            }
+        }
+        function handleKeyUp(e) {
+            if (e.code === 'ArrowDown') {
+                e.preventDefault(); 
+                player.isDucking = false;
+            }
+        }
+        
+        document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('keyup', handleKeyUp);
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); player.jump(); });
+        
+        startButton.addEventListener('click', () => {
+            backgroundMusic.play().catch(e => console.error("Audio play failed:", e));
+            init();
+        });
+
+        passwordSubmit.addEventListener('click', () => {
+            if (passwordInput.value === 'PallavaramFishMarket123') {
+                passwordPrompt.style.display = 'none';
+                gameMessageEl.style.display = 'flex';
+            } else {
+                passwordError.textContent = 'Incorrect Password';
+            }
+        });
+
+        // --- Initial Screen Setup ---
+        window.onload = () => {
+             updateHitIcons();
+        }
+
+    </script>
+</body>
+</html>
